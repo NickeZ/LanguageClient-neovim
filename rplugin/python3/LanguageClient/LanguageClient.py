@@ -51,6 +51,8 @@ class LanguageClient:
         type(self)._instance = self
         self.serverCommands = self.nvim.eval(
                 "get(g:, 'LanguageClient_serverCommands', {})")
+        self.serverStderr = self.nvim.eval(
+                "get(g:, 'LanguageClient_serverStderr', {})")
 
     def asyncCommand(self, cmds: str) -> None:
         self.nvim.async_call(self.nvim.command, cmds)
@@ -207,8 +209,13 @@ class LanguageClient:
             stderr=subprocess.PIPE,
             universal_newlines=True)
 
+        threading.Thread(
+            target=serve_stderr,
+            args=(self.server[languageId].stderr, self.serverStderr)).start()
+
         self.rpc[languageId] = RPC(
-            self.server[languageId].stdout, self.server[languageId].stdin,
+            self.server[languageId].stdout,
+            self.server[languageId].stdin,
             self.handleRequestOrNotification,
             self.handleRequestOrNotification)
         threading.Thread(
@@ -937,3 +944,11 @@ call fzf#run(fzf#wrap({{
 
     def handleError(self, message) -> None:
         self.asyncEcho(json.dumps(message))
+
+
+def serve_stderr(stderr, logfile):
+    with open(logfile, 'w') as errfile:
+        while not stderr.closed:
+            buf = stderr.readline()
+            errfile.write(buf)
+            errfile.flush()
